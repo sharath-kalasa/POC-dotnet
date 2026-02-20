@@ -1,37 +1,36 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// 1) Register CORS
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy
+            .AllowAnyOrigin()    // for local dev; tighten later
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+// 2) Other services
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Add CORS for React dev server (localhost:3000)
-builder.Services.AddCors(options =>
-{
-	options.AddPolicy("AllowReact", policy =>
-	{
-		policy.WithOrigins("http://localhost:8080")
-			  .AllowAnyHeader()
-			  .AllowAnyMethod();
-	});
-});
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-	app.UseSwagger();
-	app.UseSwaggerUI();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
 
-// Key: Add CORS BEFORE UseAuthorization
-app.UseCors("AllowReact");
-
+// 3) Correct order: Routing -> CORS -> Authorization -> Endpoints
+app.UseRouting();
+app.UseCors();          // uses the default policy above
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();
