@@ -127,7 +127,7 @@ jobs:
       shell: powershell
       run: |
         $deployPath = "C:\inetpub\wwwroot\MyDotNetApp"
-        $siteUrl = "http://localhost:8081"
+        $siteUrl = "http://localhost:8081/swagger/index.html"
 
         Start-Sleep -Seconds 5
 
@@ -138,4 +138,6 @@ jobs:
         $response = Invoke-WebRequest -Uri $siteUrl -TimeoutSec 20 -UseBasicParsing
         if ($response.StatusCode -ne 200) { throw "HTTP $($response.StatusCode) - deployment failed" }
 
-        Write-Output "SUCCESS - http://localhost:8081 is live"
+        Write-Output "SUCCESS - http://localhost:8081/swagger/index.html is live"
+
+   
