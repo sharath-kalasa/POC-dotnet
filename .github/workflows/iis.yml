@@ -70,20 +70,20 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    # 4. RESTORE
+   # 4. RESTORE
     - name: Restore Dependencies
       shell: cmd
-      run: dotnet restore
+      run: dotnet restore "dotnet-poc/dotnet-poc/dotnet-poc.csproj"
 
     # 5. BUILD
     - name: Build
       shell: cmd
-      run: dotnet build --configuration Release --no-restore
+      run: dotnet build "dotnet-poc/dotnet-poc/dotnet-poc.csproj" --configuration Release --no-restore
 
     # 6. PUBLISH
     - name: Publish
       shell: cmd
-      run: dotnet publish --configuration Release --no-build --output ./publish
+      run: dotnet publish "dotnet-poc/dotnet-poc/dotnet-poc.csproj" --configuration Release --no-build --output ./publish
 
     # 7. CHECK PUBLISH FOLDER
     - name: Check Publish Folder
