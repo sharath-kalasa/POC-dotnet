@@ -14,9 +14,9 @@ jobs:
     env:
       ECR_REPO: poc-dotnet
       ECS_CLUSTER: poc-dev
-      ECS_SERVICE: poc-dev-api
-      TASK_FAMILY: poc-api      # ← Your screenshot ✓
-      CONTAINER_NAME: api       # ← Your screenshot ✓
+      ECS_SERVICE: dev-api
+      TASK_FAMILY: poc-dev-api      # ← Your screenshot ✓
+      CONTAINER_NAME: dev-api       # ← Your screenshot ✓
 
     steps:
     - uses: actions/checkout@v4
