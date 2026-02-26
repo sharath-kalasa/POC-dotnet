@@ -19,25 +19,10 @@ jobs:
       ECS_SERVICE: poc-dev-api
       TASK_FAMILY: poc-api
       CONTAINER_NAME: api
-      DOTNET_PROJECT: dotnet-poc/dotnet-poc/dotnet-poc.csproj  # ← FIXED path
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '8.0.x'
-
-    - name: Restore dependencies
-      run: dotnet restore ${{ env.DOTNET_PROJECT }}
-
-    - name: Build
-      run: dotnet build ${{ env.DOTNET_PROJECT }} --configuration Release --no-restore
-
-    - name: Publish
-      run: dotnet publish ${{ env.DOTNET_PROJECT }} --configuration Release --no-build --output ./publish
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -56,6 +41,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
+        # Docker does restore/build/publish automatically
         docker build -t api:latest -f Dockerfile .
         FULL_IMAGE="$ECR_REGISTRY/${{ env.ECR_REPO }}:api-$IMAGE_TAG"
         docker tag api:latest $FULL_IMAGE
