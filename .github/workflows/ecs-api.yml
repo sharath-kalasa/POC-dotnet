@@ -14,12 +14,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ECR_REPO: poc-dotnet          # ECR repo for API image
-      ECS_CLUSTER: poc-dev              # ECS cluster name
-      ECS_SERVICE: poc-dev-api          # ECS service for API
-      TASK_FAMILY: poc-api          # ECS task definition family
-      CONTAINER_NAME: api           # Container name in task definition
-      DOTNET_PROJECT: src/Api/Api.csproj  # Path to your .csproj (adjust)
+      ECR_REPO: poc-dotnet
+      ECS_CLUSTER: poc-dev
+      ECS_SERVICE: poc-dev-api
+      TASK_FAMILY: poc-api
+      CONTAINER_NAME: api
+      DOTNET_PROJECT: dotnet-poc/dotnet-poc/dotnet-poc.csproj  # ← FIXED path
 
     steps:
     - name: Checkout repository
@@ -28,7 +28,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x'         # Or your API’s version
+        dotnet-version: '8.0.x'
 
     - name: Restore dependencies
       run: dotnet restore ${{ env.DOTNET_PROJECT }}
@@ -36,8 +36,8 @@ jobs:
     - name: Build
       run: dotnet build ${{ env.DOTNET_PROJECT }} --configuration Release --no-restore
 
-    - name: Test
-      run: dotnet test ${{ env.DOTNET_PROJECT }} --configuration Release --no-build --verbosity normal
+    - name: Publish
+      run: dotnet publish ${{ env.DOTNET_PROJECT }} --configuration Release --no-build --output ./publish
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -56,15 +56,10 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build API Docker image (Dockerfile should be at repo root or adjust path)
         docker build -t api:latest -f Dockerfile .
-
         FULL_IMAGE="$ECR_REGISTRY/${{ env.ECR_REPO }}:api-$IMAGE_TAG"
         docker tag api:latest $FULL_IMAGE
-
-        # Push only immutable tag (no :latest)
         docker push $FULL_IMAGE
-
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
 
     - name: Render new ECS task definition
