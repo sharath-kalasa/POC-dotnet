@@ -1,4 +1,5 @@
 name: dev-api-deployment
+
 on:
   workflow_dispatch:
   push:
@@ -11,20 +12,23 @@ permissions:
 jobs:
   dev-api:
     runs-on: ubuntu-latest
+    
     env:
-      ECR_REPO: poc-dotnet
-      ECS_CLUSTER: poc-dev
-      ECS_SERVICE: dev-api
-      TASK_FAMILY: poc-dev-api      # ← Your screenshot ✓
-      CONTAINER_NAME: dev-api       # ← Your screenshot ✓
+      ECR_REPO: poc-dotnet        # ECR repo for API image
+      ECS_CLUSTER: poc-dev        # ECS cluster name
+      ECS_SERVICE: poc-dev-api    # ECS service for API
+      TASK_FAMILY: poc-api        # ECS task definition family
+      CONTAINER_NAME: api         # Container name in task definition
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-session-name: poc-dev-api-deploy
         aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Login to Amazon ECR
@@ -35,23 +39,30 @@ jobs:
       id: build-api
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
       run: |
+        # Build .NET API (Dockerfile perfect ✅)
         docker build -t api:latest -f Dockerfile .
-        FULL_IMAGE="$ECR_REGISTRY/${{ env.ECR_REPO }}:api-$IMAGE_TAG"
-        docker tag api:latest $FULL_IMAGE
-        docker push $FULL_IMAGE
+        
+        # Generate timestamp: 20260226170024 (YYYYMMDDHHMMSS)
+        TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+        
+        # Tag: api-20260226170024 (immutable-safe, React pattern)
+        FULL_IMAGE="${ECR_REGISTRY}/${{ env.ECR_REPO }}:api-$TIMESTAMP"
+        
+        docker tag api:latest "$FULL_IMAGE"
+        docker push "$FULL_IMAGE"
+        
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
 
-    - name: Render ECS task definition
+    - name: Render new ECS task definition
       id: task-def-api
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
-        task-definition: ${{ env.TASK_FAMILY }}  # poc-api ✓
-        container-name: ${{ env.CONTAINER_NAME }} # api ✓
+        task-definition: ${{ env.TASK_FAMILY }}
+        container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-api.outputs.image }}
 
-    - name: Deploy to ECS
+    - name: Deploy Amazon ECS task definition
       uses: aws-actions/amazon-ecs-deploy-task-definition@v2
       with:
         task-definition: ${{ steps.task-def-api.outputs.task-definition }}
