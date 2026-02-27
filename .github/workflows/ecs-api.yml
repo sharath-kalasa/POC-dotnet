@@ -18,7 +18,7 @@ jobs:
       ECS_CLUSTER: poc-dev
       ECS_SERVICE: poc-dev-api
       TASK_FAMILY: poc-dev-api    # Task definition family name
-      CONTAINER_NAME: api
+      CONTAINER_NAME: dev-api
 
     steps:
     - name: Checkout repository
