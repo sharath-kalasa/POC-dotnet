@@ -17,7 +17,7 @@ jobs:
       ECR_REPO: poc-dotnet
       ECS_CLUSTER: poc-dev
       ECS_SERVICE: poc-dev-api
-      TASK_FAMILY: poc-dev-api    # ← NEW task definition name
+      TASK_FAMILY: poc-dev-api    # Task definition family name
       CONTAINER_NAME: api
 
     steps:
@@ -47,11 +47,19 @@ jobs:
         docker push "$FULL_IMAGE"
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
 
+    - name: Download current ECS task definition
+      run: |
+        aws ecs describe-task-definition \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --task-definition ${{ env.TASK_FAMILY }} \
+          --query 'taskDefinition' \
+          --output json > task-definition.json
+
     - name: Render new ECS task definition
       id: task-def-api
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
-        task-definition: ${{ env.TASK_FAMILY }}  # poc-dev-api
+        task-definition: task-definition.json  # Now points to downloaded file
         container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-api.outputs.image }}
 
