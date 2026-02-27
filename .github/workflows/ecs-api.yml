@@ -16,9 +16,9 @@ jobs:
     env:
       ECR_REPO: poc-dotnet
       ECS_CLUSTER: poc-dev
-      ECS_SERVICE: poc-dev-api
-      TASK_FAMILY: poc-dev-api    # Task definition family name
-      CONTAINER_NAME: dev-api
+      ECS_SERVICE: dev-api          # ← FIXED: ECS service name
+      TASK_FAMILY: poc-dev-api      # Task definition family
+      CONTAINER_NAME: dev-api       # ← FIXED: Container name
 
     steps:
     - name: Checkout repository
@@ -59,13 +59,13 @@ jobs:
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
         task-definition: task-definition.json
-        container-name: ${{ env.CONTAINER_NAME }}
+        container-name: ${{ env.CONTAINER_NAME }}   # dev-api
         image: ${{ steps.build-api.outputs.image }}
 
     - name: Deploy Amazon ECS task definition
       uses: aws-actions/amazon-ecs-deploy-task-definition@v2
       with:
         task-definition: ${{ steps.task-def-api.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
+        service: ${{ env.ECS_SERVICE }}             # dev-api
         cluster: ${{ env.ECS_CLUSTER }}
         wait-for-service-stability: true
