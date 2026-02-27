@@ -50,7 +50,6 @@ jobs:
     - name: Download current ECS task definition
       run: |
         aws ecs describe-task-definition \
-          --cluster ${{ env.ECS_CLUSTER }} \
           --task-definition ${{ env.TASK_FAMILY }} \
           --query 'taskDefinition' \
           --output json > task-definition.json
@@ -59,7 +58,7 @@ jobs:
       id: task-def-api
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
-        task-definition: task-definition.json  # Now points to downloaded file
+        task-definition: task-definition.json
         container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-api.outputs.image }}
 
