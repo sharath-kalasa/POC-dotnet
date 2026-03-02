@@ -35,52 +35,44 @@ jobs:
     - name: Build .NET API and push to ECR
       id: build-image
       run: |
-        # ✅ FIXED: Proper ECR image format
+        # ✅ CRITICAL: Hardcode repo name + debug secrets
         IMAGE_TAG=$(date +%d%m%Y%H%M%S)
         ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-        ECR_REPO="${{ secrets.ECR_REPOSITORY }}"  # poc-dotnet-dev
+        ECR_REPO="poc-dotnet-dev"  # HARDCODED - remove secret dependency
         FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
         
-        echo "✅ Building project: dotnet-poc/dotnet-poc/dotnet-poc.csproj"
-        echo "✅ Image: $FULL_IMAGE"
+        echo "✅ Registry: $ECR_REGISTRY"
+        echo "✅ Repo: $ECR_REPO" 
+        echo "✅ Full image: $FULL_IMAGE"
         
-        # Build .NET from correct path
+        # Build .NET (publish to root)
         cd dotnet-poc/dotnet-poc
         dotnet restore dotnet-poc.csproj
         dotnet publish dotnet-poc.csproj -c Release -o ../../publish
         
         cd ../..
         
-        # ✅ .NET Dockerfile
-        cat > Dockerfile << EOF
+        # ✅ SIMPLIFIED Dockerfile - copy publish folder directly
+        cat > Dockerfile << 'EOF'
         FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS base
         WORKDIR /app
         EXPOSE 8080
         
-        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
-        WORKDIR /src/dotnet-poc/dotnet-poc
-        COPY ["dotnet-poc.csproj", "."]
-        RUN dotnet restore "dotnet-poc.csproj"
-        COPY dotnet-poc/dotnet-poc/ .
-        WORKDIR "/src/dotnet-poc/dotnet-poc"
-        RUN dotnet build "dotnet-poc.csproj" -c Release -o /app/build
-        
-        FROM build AS publish
-        RUN dotnet publish "dotnet-poc.csproj" -c Release -o /app/publish /p:UseAppHost=false
-        
         FROM base AS final
         WORKDIR /app
-        COPY --from=publish /app/publish .
+        COPY publish/ .
         ENTRYPOINT ["dotnet", "dotnet-poc.dll"]
         EOF
+        
+        echo "✅ Dockerfile created"
+        ls -la publish/  # Verify publish folder exists
         
         # Build & push
         docker build --no-cache -t "$FULL_IMAGE" .
         docker push "$FULL_IMAGE"
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
-        echo "✅ .NET API image ready!"
 
-    - name: Fill task definition with new image
+    - name: Fill task definition
       id: task-def
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
@@ -88,7 +80,7 @@ jobs:
         container-name: poc-dotnet-task
         image: ${{ steps.build-image.outputs.image }}
 
-    - name: Deploy to ECS service
+    - name: Deploy to ECS
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
