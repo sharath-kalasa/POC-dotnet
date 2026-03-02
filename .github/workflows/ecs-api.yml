@@ -35,20 +35,23 @@ jobs:
     - name: Build .NET API and push to ECR
       id: build-image
       run: |
+        # ✅ FIXED: Proper ECR image format
         IMAGE_TAG=$(date +%d%m%Y%H%M%S)
         ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-        ECR_REPO="${{ secrets.ECR_REPOSITORY }}"
+        ECR_REPO="${{ secrets.ECR_REPOSITORY }}"  # poc-dotnet-dev
         FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
         
         echo "✅ Building project: dotnet-poc/dotnet-poc/dotnet-poc.csproj"
+        echo "✅ Image: $FULL_IMAGE"
         
-        # Build from correct directory
+        # Build .NET from correct path
         cd dotnet-poc/dotnet-poc
         dotnet restore dotnet-poc.csproj
         dotnet publish dotnet-poc.csproj -c Release -o ../../publish
         
-        # Create Dockerfile in root
         cd ../..
+        
+        # ✅ .NET Dockerfile
         cat > Dockerfile << EOF
         FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS base
         WORKDIR /app
@@ -71,9 +74,11 @@ jobs:
         ENTRYPOINT ["dotnet", "dotnet-poc.dll"]
         EOF
         
+        # Build & push
         docker build --no-cache -t "$FULL_IMAGE" .
         docker push "$FULL_IMAGE"
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+        echo "✅ .NET API image ready!"
 
     - name: Fill task definition with new image
       id: task-def
