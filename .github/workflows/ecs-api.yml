@@ -1,4 +1,4 @@
-name: dev-api-deployment
+name: Deploy .NET API to ECS
 
 on:
   workflow_dispatch:
@@ -10,62 +10,83 @@ permissions:
   contents: read
 
 jobs:
-  dev-api:
+  deploy:
     runs-on: ubuntu-latest
     
-    env:
-      ECR_REPO: poc-dotnet
-      ECS_CLUSTER: poc-dev
-      ECS_SERVICE: dev-api          # ← FIXED: ECS service name
-      TASK_FAMILY: poc-dev-api      # Task definition family
-      CONTAINER_NAME: dev-api       # ← FIXED: Container name
-
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
+    - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        role-session-name: poc-dev-api-deploy
         aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build and push Docker image
-      id: build-api
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'  # Update to your version
+
+    - name: Build React and push to ECR
+      id: build-image
       run: |
-        docker build -t api:latest -f Dockerfile .
-        TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
-        FULL_IMAGE="${ECR_REGISTRY}/${{ env.ECR_REPO }}:api-$TIMESTAMP"
-        docker tag api:latest "$FULL_IMAGE"
+        # Timestamp tag
+        IMAGE_TAG=$(date +%d%m%Y%H%M%S)
+        ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+        ECR_REPO="${{ secrets.ECR_REPOSITORY }}"  # poc-dotnet-dev
+        FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+        
+        echo "Building .NET API: $FULL_IMAGE"
+        
+        # Build and publish .NET
+        dotnet restore
+        dotnet publish -c Release -o ./publish
+        
+        # .NET API Dockerfile
+        cat > Dockerfile << EOF
+        FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS base
+        WORKDIR /app
+        EXPOSE 8080
+        
+        FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+        WORKDIR /src
+        COPY ["YourProject.csproj", "."]
+        RUN dotnet restore "YourProject.csproj"
+        COPY . .
+        WORKDIR "/src"
+        RUN dotnet build "YourProject.csproj" -c Release -o /app/build
+        
+        FROM build AS publish
+        RUN dotnet publish "YourProject.csproj" -c Release -o /app/publish /p:UseAppHost=false
+        
+        FROM base AS final
+        WORKDIR /app
+        COPY --from=publish /app/publish .
+        ENTRYPOINT ["dotnet", "YourProject.dll"]
+        EOF
+        
+        # Build & push
+        docker build --no-cache -t "$FULL_IMAGE" .
         docker push "$FULL_IMAGE"
         echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
 
-    - name: Download current ECS task definition
-      run: |
-        aws ecs describe-task-definition \
-          --task-definition ${{ env.TASK_FAMILY }} \
-          --query 'taskDefinition' \
-          --output json > task-definition.json
-
-    - name: Render new ECS task definition
-      id: task-def-api
+    - name: Fill task definition with new image
+      id: task-def
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
-        task-definition: task-definition.json
-        container-name: ${{ env.CONTAINER_NAME }}   # dev-api
-        image: ${{ steps.build-api.outputs.image }}
+        task-definition: poc-dotnet-task.json  # Create this file below
+        container-name: poc-dotnet-task
+        image: ${{ steps.build-image.outputs.image }}
 
-    - name: Deploy Amazon ECS task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+    - name: Deploy to ECS service
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
-        task-definition: ${{ steps.task-def-api.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}             # dev-api
-        cluster: ${{ env.ECS_CLUSTER }}
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: poc-dotnet-dev
+        cluster: poc-dev
         wait-for-service-stability: true
