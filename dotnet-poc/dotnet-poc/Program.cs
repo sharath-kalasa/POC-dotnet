@@ -26,6 +26,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.MapGet("/health", () => Results.Ok("API Healthy"));
 
 // 3) Correct order: Routing -> CORS -> Authorization -> Endpoints
 app.UseRouting();
