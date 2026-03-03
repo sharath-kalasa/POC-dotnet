@@ -1,0 +1,89 @@
+name: Deploy .NET API to ECS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Build .NET API and push to ECR
+      id: build-image
+      run: |
+        # ✅ CRITICAL: Hardcode repo name + debug secrets
+        IMAGE_TAG=$(date +%d%m%Y%H%M%S)
+        ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+        ECR_REPO="poc-dotnet-dev"  # HARDCODED - remove secret dependency
+        FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+        
+        echo "✅ Registry: $ECR_REGISTRY"
+        echo "✅ Repo: $ECR_REPO" 
+        echo "✅ Full image: $FULL_IMAGE"
+        
+        # Build .NET (publish to root)
+        cd dotnet-poc/dotnet-poc
+        dotnet restore dotnet-poc.csproj
+        dotnet publish dotnet-poc.csproj -c Release -o ../../publish
+        
+        cd ../..
+        
+        # ✅ SIMPLIFIED Dockerfile - copy publish folder directly
+        cat > Dockerfile << 'EOF'
+        FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS base
+        WORKDIR /app
+        EXPOSE 8080
+        
+        FROM base AS final
+        WORKDIR /app
+        COPY publish/ .
+        ENTRYPOINT ["dotnet", "dotnet-poc.dll"]
+        EOF
+        
+        echo "✅ Dockerfile created"
+        ls -la publish/  # Verify publish folder exists
+        
+        # Build & push
+        docker build --no-cache -t "$FULL_IMAGE" .
+        docker push "$FULL_IMAGE"
+        echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+
+    - name: Fill task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: poc-dotnet-task.json
+        container-name: poc-dotnet-task
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: poc-dotnet-dev
+        cluster: poc-dev
+        wait-for-service-stability: true

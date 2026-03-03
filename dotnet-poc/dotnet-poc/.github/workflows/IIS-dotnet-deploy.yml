@@ -1,0 +1,141 @@
+name: DotNet to IIS (Auto-Create Site + Backup + Rollback)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+    # 1. CHECK IIS SITE & CREATE IF MISSING + BACKUP
+    - name: Check/Create IIS Site & Backup
+      shell: powershell
+      run: |
+        Import-Module WebAdministration
+
+        $siteName = "MyDotNetApp"
+        $deployPath = "C:\inetpub\wwwroot\MyDotNetApp"
+        $appPoolName = "MyDotNetAppPool"
+        $backupPath = "C:\inetpub\wwwroot\backups\MyDotNetAppbackup$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+        if (Test-Path "C:\inetpub\wwwroot\backups") {
+          Write-Output "Backups folder already exists"
+        } else {
+          New-Item -ItemType Directory -Force -Path "C:\inetpub\wwwroot\backups"
+          Write-Output "Backups folder created"
+        }
+
+        if (Test-Path $deployPath) {
+          Write-Output "MyDotNetApp folder already exists"
+        } else {
+          New-Item -ItemType Directory -Force -Path $deployPath
+          Write-Output "MyDotNetApp folder created"
+        }
+
+        if (Get-Website -Name $siteName -ErrorAction SilentlyContinue) {
+          Write-Output "Site '$siteName' exists"
+          if (Test-Path $deployPath) {
+            Copy-Item $deployPath $backupPath -Recurse -Force
+            Write-Output "Backup created: $backupPath"
+            echo "BACKUPPATH=$backupPath" >> $env:GITHUB_ENV
+          }
+          echo "SITEEXISTS=true" >> $env:GITHUB_ENV
+        } else {
+          Write-Output "Creating site '$siteName'..."
+
+          $poolExists = Get-ChildItem IIS:\AppPools | Where-Object { $_.Name -eq $appPoolName }
+          if (-not $poolExists) {
+            New-WebAppPool -Name $appPoolName
+            Set-ItemProperty "IIS:\AppPools\$appPoolName" managedRuntimeVersion v4.0
+            Write-Output "App Pool created"
+          } else {
+            Write-Output "App Pool already exists"
+          }
+
+          New-Website -Name $siteName -Port 8081 -PhysicalPath $deployPath -ApplicationPool $appPoolName
+          Write-Output "Site created on port 8081"
+          echo "SITEEXISTS=false" >> $env:GITHUB_ENV
+        }
+
+    # 2. CHECKOUT
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 3. SETUP DOTNET
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    # 4. RESTORE
+    - name: Restore Dependencies
+      shell: cmd
+      run: dotnet restore
+
+    # 5. BUILD
+    - name: Build
+      shell: cmd
+      run: dotnet build --configuration Release --no-restore
+
+    # 6. PUBLISH
+    - name: Publish
+      shell: cmd
+      run: dotnet publish --configuration Release --no-build --output ./publish
+
+    # 7. CHECK PUBLISH FOLDER
+    - name: Check Publish Folder
+      shell: powershell
+      run: |
+        if (Test-Path "$PWD\publish") {
+          Write-Output "Publish folder exists"
+          Get-ChildItem "$PWD\publish"
+        } else {
+          throw "Publish folder does not exist - build failed"
+        }
+
+    # 8. DEPLOY
+    - name: Deploy New App
+      shell: powershell
+      run: |
+        Import-Module WebAdministration
+        $siteName = "MyDotNetApp"
+        $deployPath = "C:\inetpub\wwwroot\MyDotNetApp"
+        $appPoolName = "MyDotNetAppPool"
+        $publishPath = "$PWD\publish"
+
+        $poolState = (Get-WebAppPoolState -Name $appPoolName).Value
+        if ($poolState -ne "Stopped") {
+          Stop-WebAppPool -Name $appPoolName
+          Write-Output "App Pool stopped"
+        } else {
+          Write-Output "App Pool already stopped"
+        }
+
+        Start-Sleep -Seconds 2
+
+        Remove-Item "$deployPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item "$publishPath\*" $deployPath -Recurse -Force
+
+        Start-WebAppPool -Name $appPoolName
+        Write-Output "Deployed successfully!"
+
+    # 9. HEALTH CHECK
+    - name: Verify Deployment
+      shell: powershell
+      run: |
+        $deployPath = "C:\inetpub\wwwroot\MyDotNetApp"
+        $siteUrl = "http://localhost:8081"
+
+        Start-Sleep -Seconds 5
+
+        if (-not (Test-Path "$deployPath\web.config")) {
+          throw "web.config missing - deployment failed"
+        }
+
+        $response = Invoke-WebRequest -Uri $siteUrl -TimeoutSec 20 -UseBasicParsing
+        if ($response.StatusCode -ne 200) { throw "HTTP $($response.StatusCode) - deployment failed" }
+
+        Write-Output "SUCCESS - http://localhost:8081 is live"
